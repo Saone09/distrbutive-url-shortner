@@ -1,0 +1,254 @@
+{% extends "base.html" %}
+{% block title %}My URLs — LinkSnap{% endblock %}
+{% block meta_description %}Manage and monitor all your shortened URLs. View clicks, copy links, and delete expired entries.{% endblock %}
+{% block page_title %}My URLs{% endblock %}
+{% block content %}
+
+<div class="stats-grid mb-6" id="dashboard-stats">
+  <div class="stat-card primary">
+    <div class="stat-card-header">
+      <span class="stat-label">Total URLs</span>
+      <div class="stat-icon">🔗</div>
+    </div>
+    <div class="stat-value" id="stat-total-urls">—</div>
+    <div class="stat-description">Shortened links</div>
+  </div>
+  <div class="stat-card success">
+    <div class="stat-card-header">
+      <span class="stat-label">Total Clicks</span>
+      <div class="stat-icon">👆</div>
+    </div>
+    <div class="stat-value" id="stat-total-clicks">—</div>
+    <div class="stat-description">All-time redirects</div>
+  </div>
+  <div class="stat-card warning">
+    <div class="stat-card-header">
+      <span class="stat-label">Clicks Today</span>
+      <div class="stat-icon">📅</div>
+    </div>
+    <div class="stat-value" id="stat-clicks-today">—</div>
+    <div class="stat-description">Since midnight UTC</div>
+  </div>
+  <div class="stat-card info">
+    <div class="stat-card-header">
+      <span class="stat-label">Active Links</span>
+      <div class="stat-icon">✅</div>
+    </div>
+    <div class="stat-value" id="stat-active-urls">—</div>
+    <div class="stat-description">Non-expired URLs</div>
+  </div>
+</div>
+
+<div class="table-card">
+  <div class="table-toolbar">
+    <div class="section-header" style="margin-bottom:0; flex:1;">
+      <div>
+        <div class="section-title" style="font-size:16px;">All URLs</div>
+        <div class="section-subtitle" id="url-count-label">Loading…</div>
+      </div>
+    </div>
+    <div style="display:flex; align-items:center; gap:12px; flex-wrap:wrap;">
+      <div class="search-wrapper">
+        <span class="search-icon">🔍</span>
+        <input
+          type="search"
+          class="search-input"
+          id="search-input"
+          placeholder="Search URLs…"
+          aria-label="Search URLs"
+        />
+      </div>
+      <a href="{{ url_for('main.index') }}" class="btn btn-primary btn-sm" id="btn-new-url">
+        + New URL
+      </a>
+    </div>
+  </div>
+  
+  <div style="overflow-x: auto;">
+    <table class="data-table" id="url-table" aria-label="Shortened URLs">
+      <thead>
+        <tr>
+          <th>Short Code</th>
+          <th>Destination</th>
+          <th>Created</th>
+          <th>Clicks</th>
+          <th>Status</th>
+          <th>Actions</th>
+        </tr>
+      </thead>
+      <tbody id="url-table-body">
+        <tr>
+          <td colspan="6">
+            <div class="empty-state">
+              <div class="empty-state-icon">⏳</div>
+              <div class="empty-state-title">Loading URLs…</div>
+            </div>
+          </td>
+        </tr>
+      </tbody>
+    </table>
+  </div>
+  
+  <div class="pagination" id="pagination-container">
+    <span id="pagination-info" class="text-muted">—</span>
+    <div class="pagination-controls" id="pagination-controls"></div>
+  </div>
+</div>
+
+<div class="modal-overlay hidden" id="detail-modal" role="dialog" aria-modal="true" aria-labelledby="detail-modal-title">
+  <div class="modal" style="max-width:560px;">
+    <h2 class="modal-title" id="detail-modal-title">🔗 URL Details</h2>
+    <div id="detail-modal-content" style="margin-bottom:20px;"></div>
+    <div class="modal-actions">
+      <button class="btn btn-secondary" id="detail-close-btn">Close</button>
+      <button class="btn btn-primary btn-sm" id="detail-copy-btn">📋 Copy Short URL</button>
+      <a class="btn btn-secondary btn-sm" id="detail-analytics-btn" href="#">📊 Analytics</a>
+    </div>
+  </div>
+</div>
+{% endblock %}
+{% block scripts %}
+<script>
+let currentPage = 1;
+let totalPages = 1;
+let searchDebounceTimer = null;
+let detailUrl = null;
+loadStats();
+loadUrls(1);
+document.getElementById('search-input').addEventListener('input', e => {
+  clearTimeout(searchDebounceTimer);
+  searchDebounceTimer = setTimeout(() => loadUrls(1), 350);
+});
+async function loadStats() {
+  const { ok, data } = await apiRequest('GET', '/api/analytics/overview');
+  if (!ok) return;
+  document.getElementById('stat-total-urls').textContent   = formatNumber(data.total_urls);
+  document.getElementById('stat-total-clicks').textContent = formatNumber(data.total_clicks);
+  document.getElementById('stat-clicks-today').textContent = formatNumber(data.clicks_today);
+  document.getElementById('stat-active-urls').textContent  = formatNumber(data.active_urls);
+}
+async function loadUrls(page) {
+  currentPage = page;
+  const search = document.getElementById('search-input').value.trim();
+  const params = new URLSearchParams({ page, per_page: 15 });
+  if (search) params.set('search', search);
+  const { ok, data } = await apiRequest('GET', `/api/urls?${params}`);
+  const tbody = document.getElementById('url-table-body');
+  if (!ok) {
+    tbody.innerHTML = `<tr><td colspan="6"><div class="empty-state">
+      <div class="empty-state-icon">❌</div>
+      <div class="empty-state-title">Failed to load URLs</div>
+    </div></td></tr>`;
+    return;
+  }
+  if (!data.urls || data.urls.length === 0) {
+    tbody.innerHTML = `<tr><td colspan="6"><div class="empty-state">
+      <div class="empty-state-icon">🔗</div>
+      <div class="empty-state-title">No URLs yet</div>
+      <div class="empty-state-description">Create your first short URL using the button above.</div>
+      <a href="/" class="btn btn-primary">+ Shorten a URL</a>
+    </div></td></tr>`;
+    document.getElementById('url-count-label').textContent = '0 URLs';
+    document.getElementById('pagination-info').textContent = '';
+    document.getElementById('pagination-controls').innerHTML = '';
+    return;
+  }
+  totalPages = data.pages || 1;
+  document.getElementById('url-count-label').textContent =
+    `${formatNumber(data.total)} URL${data.total !== 1 ? 's' : ''}`;
+  document.getElementById('pagination-info').textContent =
+    `Page ${data.page} of ${totalPages} · ${formatNumber(data.total)} total`;
+  tbody.innerHTML = data.urls.map(u => buildRow(u)).join('');
+  renderPagination(data.page, totalPages);
+}
+function buildRow(u) {
+  const statusBadge = u.is_expired
+    ? `<span class="badge badge-danger">Expired</span>`
+    : u.is_active
+    ? `<span class="badge badge-success">Active</span>`
+    : `<span class="badge badge-default">Deleted</span>`;
+  const expiryInfo = u.expires_at
+    ? `<span class="text-subtle" style="font-size:11px;">Expires ${formatDate(u.expires_at)}</span>`
+    : '';
+  return `<tr>
+    <td>
+      <a href="${escapeHtml(u.short_url)}" target="_blank" class="short-code-link" title="Open short URL">
+        /${escapeHtml(u.short_code)}
+      </a>
+      ${expiryInfo}
+    </td>
+    <td class="url-cell">
+      <span class="url-original" title="${escapeHtml(u.original_url)}">${escapeHtml(u.original_url)}</span>
+      ${u.title ? `<span style="font-size:12px; color:var(--color-primary-light);">${escapeHtml(u.title)}</span>` : ''}
+    </td>
+    <td style="white-space:nowrap; font-size:13px; color:var(--color-text-muted);">${formatDate(u.created_at)}</td>
+    <td><span class="click-count">${formatNumber(u.click_count)}</span></td>
+    <td>${statusBadge}</td>
+    <td>
+      <div class="action-group">
+        <button class="btn btn-secondary btn-sm btn-icon" title="Copy short URL"
+          onclick="copyToClipboard('${escapeHtml(u.short_url)}')">📋</button>
+        <button class="btn btn-secondary btn-sm btn-icon" title="View details"
+          onclick="showDetail('${escapeHtml(u.short_code)}')">👁</button>
+        <a class="btn btn-secondary btn-sm btn-icon" title="Analytics"
+          href="/analytics#${escapeHtml(u.short_code)}">📊</a>
+        <button class="btn btn-danger btn-sm btn-icon" title="Delete"
+          onclick="confirmDelete('${escapeHtml(u.short_code)}')">🗑</button>
+      </div>
+    </td>
+  </tr>`;
+}
+function renderPagination(page, total) {
+  const ctrl = document.getElementById('pagination-controls');
+  let html = `<button class="page-btn" onclick="loadUrls(${page-1})" ${page<=1?'disabled':''}>‹</button>`;
+  const start = Math.max(1, page - 2);
+  const end   = Math.min(total, page + 2);
+  for (let i = start; i <= end; i++) {
+    html += `<button class="page-btn ${i===page?'active':''}" onclick="loadUrls(${i})">${i}</button>`;
+  }
+  html += `<button class="page-btn" onclick="loadUrls(${page+1})" ${page>=total?'disabled':''}>›</button>`;
+  ctrl.innerHTML = html;
+}
+function confirmDelete(shortCode) {
+  showDeleteModal(shortCode, async code => {
+    const { ok, data } = await apiRequest('DELETE', `/api/urls/${code}`);
+    if (ok) {
+      showToast('URL deleted.', 'success');
+      loadUrls(currentPage);
+      loadStats();
+    } else {
+      showToast(data.message || 'Delete failed.', 'error');
+    }
+  });
+}
+async function showDetail(shortCode) {
+  const { ok, data } = await apiRequest('GET', `/api/urls/${shortCode}`);
+  if (!ok) { showToast('Could not load URL details.', 'error'); return; }
+  const u = data.url;
+  detailUrl = u;
+  document.getElementById('detail-modal-title').textContent = `🔗 /${u.short_code}`;
+  document.getElementById('detail-modal-content').innerHTML = `
+    <div class="detail-row"><span class="detail-key">Short URL</span>
+      <span class="detail-value font-mono">${escapeHtml(u.short_url)}</span></div>
+    <div class="detail-row"><span class="detail-key">Destination</span>
+      <span class="detail-value" style="word-break:break-all;">${escapeHtml(u.original_url)}</span></div>
+    ${u.title ? `<div class="detail-row"><span class="detail-key">Title</span>
+      <span class="detail-value">${escapeHtml(u.title)}</span></div>` : ''}
+    <div class="detail-row"><span class="detail-key">Created</span>
+      <span class="detail-value">${formatDate(u.created_at)}</span></div>
+    <div class="detail-row"><span class="detail-key">Expires</span>
+      <span class="detail-value">${u.expires_at ? formatDate(u.expires_at) : 'Never'}</span></div>
+    <div class="detail-row"><span class="detail-key">Total Clicks</span>
+      <span class="detail-value font-bold" style="color:var(--color-primary-light);">${formatNumber(u.click_count)}</span></div>
+    <div class="detail-row"><span class="detail-key">Status</span>
+      <span class="detail-value">${u.is_expired ? '⏱ Expired' : u.is_active ? '✅ Active' : '🗑 Deleted'}</span></div>
+  `;
+  document.getElementById('detail-copy-btn').onclick = () => copyToClipboard(u.short_url);
+  document.getElementById('detail-analytics-btn').href = `/analytics#${u.short_code}`;
+  document.getElementById('detail-modal').classList.remove('hidden');
+}
+document.getElementById('detail-close-btn').addEventListener('click', () => {
+  document.getElementById('detail-modal').classList.add('hidden');
+});
+</script>
+{% endblock %}

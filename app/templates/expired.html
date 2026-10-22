@@ -1,0 +1,15 @@
+{% extends "base.html" %}
+{% block title %}Link Expired — LinkSnap{% endblock %}
+{% block page_title %}Link Expired{% endblock %}
+{% block content %}
+<div style="display:flex; flex-direction:column; align-items:center; justify-content:center; min-height:60vh; text-align:center; padding:32px;">
+  <div style="font-size:64px; margin-bottom:24px;">⏱</div>
+  <h2 style="font-size:28px; font-weight:800; margin-bottom:12px;">This link has expired</h2>
+  <p style="color:var(--color-text-muted); font-size:16px; max-width:420px; line-height:1.7; margin-bottom:32px;">
+    The short URL <strong style="color:var(--color-primary-light);">/{{ short_code }}</strong>
+    was valid for a limited time and has now expired.
+    Please contact the link creator for an updated URL.
+  </p>
+  <a href="/" class="btn btn-primary">← Go to Home</a>
+</div>
+{% endblock %}

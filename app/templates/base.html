@@ -1,0 +1,174 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+  <meta name="description" content="{% block meta_description %}Distributed URL Shortener &amp; Event Tracking System — shorten, track, and analyze your links.{% endblock %}" />
+  <title>{% block title %}LinkSnap — URL Shortener{% endblock %}</title>
+  
+  <link rel="preconnect" href="https://fonts.googleapis.com" />
+  <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin />
+  
+  <link rel="stylesheet" href="{{ url_for('static', filename='css/style.css') }}" />
+  
+  <script src="https://cdn.jsdelivr.net/npm/chart.js@4.4.4/dist/chart.umd.min.js" defer></script>
+  {% block extra_head %}{% endblock %}
+</head>
+<body>
+
+<div class="app-layout">
+  
+  <aside class="sidebar" id="sidebar" role="navigation" aria-label="Main navigation">
+    <div class="sidebar-logo">
+      <div class="logo-icon" aria-hidden="true">🔗</div>
+      <span class="logo-text">Link<span>Snap</span></span>
+    </div>
+    <nav class="sidebar-nav">
+      <span class="nav-section-label">Main</span>
+      <a href="{{ url_for('main.index') }}"
+         class="nav-item {% if request.endpoint == 'main.index' %}active{% endif %}"
+         id="nav-home">
+        <span class="nav-icon">🏠</span> Home
+      </a>
+      <a href="{{ url_for('main.dashboard') }}"
+         class="nav-item {% if request.endpoint == 'main.dashboard' %}active{% endif %}"
+         id="nav-dashboard">
+        <span class="nav-icon">📋</span> My URLs
+      </a>
+      <a href="{{ url_for('main.analytics') }}"
+         class="nav-item {% if request.endpoint == 'main.analytics' %}active{% endif %}"
+         id="nav-analytics">
+        <span class="nav-icon">📊</span> Analytics
+      </a>
+      <span class="nav-section-label">API</span>
+      <a href="/api/analytics/overview" target="_blank" class="nav-item" id="nav-api">
+        <span class="nav-icon">🔌</span> REST API
+      </a>
+    </nav>
+    <div class="sidebar-footer">
+      <span class="version-tag">⚡ v1.0.0 · BE-04</span>
+    </div>
+  </aside>
+  
+  <main class="main-content" role="main">
+    
+    <header class="top-header">
+      <div class="flex items-center gap-3">
+        <button class="hamburger-btn" id="hamburger-btn" aria-label="Toggle sidebar" aria-expanded="false">☰</button>
+        <h1 class="page-title">{% block page_title %}LinkSnap{% endblock %}</h1>
+      </div>
+      <div class="header-actions">
+        <a href="{{ url_for('main.index') }}" class="btn btn-primary btn-sm" id="btn-create-url">
+          + Shorten URL
+        </a>
+      </div>
+    </header>
+    
+    <div class="page-body">
+      {% block content %}{% endblock %}
+    </div>
+  </main>
+</div>
+
+<div id="toast-container" role="status" aria-live="polite"></div>
+
+<div class="modal-overlay hidden" id="delete-modal" role="dialog" aria-modal="true" aria-labelledby="delete-modal-title">
+  <div class="modal">
+    <h2 class="modal-title" id="delete-modal-title">⚠️ Delete Short URL?</h2>
+    <p class="modal-description" id="delete-modal-desc">
+      This will deactivate the short URL. Existing clicks will remain in analytics.
+      This action cannot be undone.
+    </p>
+    <div class="modal-actions">
+      <button class="btn btn-secondary" id="delete-cancel-btn">Cancel</button>
+      <button class="btn btn-danger" id="delete-confirm-btn">Delete</button>
+    </div>
+  </div>
+</div>
+
+<div id="sidebar-overlay" style="display:none; position:fixed; inset:0; z-index:99; background:rgba(0,0,0,0.5);" onclick="closeSidebar()"></div>
+
+<script>
+function showToast(message, type = 'info', duration = 4000) {
+  const icons = { success: '✅', error: '❌', info: 'ℹ️', warning: '⚠️' };
+  const container = document.getElementById('toast-container');
+  const toast = document.createElement('div');
+  toast.className = `toast ${type}`;
+  toast.innerHTML = `
+    <span class="toast-icon">${icons[type] || 'ℹ️'}</span>
+    <span class="toast-message">${escapeHtml(message)}</span>
+    <button class="toast-close" onclick="removeToast(this.parentElement)" aria-label="Dismiss">✕</button>
+  `;
+  container.appendChild(toast);
+  setTimeout(() => removeToast(toast), duration);
+}
+function removeToast(toast) {
+  if (!toast || !toast.parentElement) return;
+  toast.classList.add('removing');
+  setTimeout(() => toast.remove(), 300);
+}
+function escapeHtml(str) {
+  const map = { '&':'&amp;', '<':'&lt;', '>':'&gt;', '"':'&quot;', "'":'&#39;' };
+  return String(str).replace(/[&<>"']/g, m => map[m]);
+}
+async function copyToClipboard(text) {
+  try {
+    await navigator.clipboard.writeText(text);
+    showToast('Copied to clipboard!', 'success', 2500);
+  } catch {
+    showToast('Copy failed. Please copy manually.', 'error');
+  }
+}
+function openSidebar() {
+  document.getElementById('sidebar').classList.add('open');
+  document.getElementById('sidebar-overlay').style.display = 'block';
+  document.getElementById('hamburger-btn').setAttribute('aria-expanded', 'true');
+}
+function closeSidebar() {
+  document.getElementById('sidebar').classList.remove('open');
+  document.getElementById('sidebar-overlay').style.display = 'none';
+  document.getElementById('hamburger-btn').setAttribute('aria-expanded', 'false');
+}
+document.getElementById('hamburger-btn').addEventListener('click', () => {
+  const sidebar = document.getElementById('sidebar');
+  sidebar.classList.contains('open') ? closeSidebar() : openSidebar();
+});
+let _deleteCode = null;
+let _deleteCallback = null;
+function showDeleteModal(shortCode, onConfirm) {
+  _deleteCode = shortCode;
+  _deleteCallback = onConfirm;
+  document.getElementById('delete-modal-desc').textContent =
+    `Deactivate /${shortCode}? This cannot be undone.`;
+  document.getElementById('delete-modal').classList.remove('hidden');
+}
+document.getElementById('delete-cancel-btn').addEventListener('click', () => {
+  document.getElementById('delete-modal').classList.add('hidden');
+});
+document.getElementById('delete-confirm-btn').addEventListener('click', () => {
+  document.getElementById('delete-modal').classList.add('hidden');
+  if (_deleteCallback) _deleteCallback(_deleteCode);
+});
+async function apiRequest(method, path, body = null) {
+  const opts = {
+    method,
+    headers: { 'Content-Type': 'application/json', 'Accept': 'application/json' },
+  };
+  if (body) opts.body = JSON.stringify(body);
+  const res = await fetch(path, opts);
+  const data = await res.json().catch(() => ({}));
+  return { ok: res.ok, status: res.status, data };
+}
+function formatDate(isoStr) {
+  if (!isoStr) return '—';
+  const d = new Date(isoStr);
+  return d.toLocaleDateString(undefined, { year:'numeric', month:'short', day:'numeric' });
+}
+function formatNumber(n) {
+  if (n === undefined || n === null) return '0';
+  return Number(n).toLocaleString();
+}
+</script>
+{% block scripts %}{% endblock %}
+</body>
+</html>

@@ -1,0 +1,184 @@
+{% extends "base.html" %}
+{% block title %}LinkSnap — Shorten & Track Your Links{% endblock %}
+{% block meta_description %}Shorten long URLs instantly, track clicks in real-time, and analyze your audience with LinkSnap.{% endblock %}
+{% block page_title %}Home{% endblock %}
+{% block content %}
+<div class="hero-section">
+  
+  <div class="hero-badge">
+    ⚡ Distributed URL Shortener &amp; Event Tracking System
+  </div>
+  
+  <h2 class="hero-title">
+    Shorten URLs.<br>
+    <span class="gradient-text">Track Every Click.</span>
+  </h2>
+  <p class="hero-description">
+    Create short, memorable links in seconds. Get real-time analytics on clicks,
+    referrers, and trends — all in one beautiful dashboard.
+  </p>
+  
+  <div class="url-form-card" id="url-form-card">
+    <form id="shorten-form" novalidate>
+      
+      <div class="url-input-group">
+        <input
+          type="url"
+          id="url-input"
+          class="url-input"
+          placeholder="Paste your long URL here... (https://example.com/...)"
+          autocomplete="off"
+          spellcheck="false"
+          required
+          aria-label="Long URL to shorten"
+        />
+        <button type="submit" class="btn btn-primary" id="shorten-btn">
+          <span id="btn-text">Shorten</span>
+          <span id="btn-spinner" class="spinner hidden"></span>
+        </button>
+      </div>
+      
+      <div class="url-options">
+        <div class="form-group">
+          <label for="title-input" class="form-label">Title (optional)</label>
+          <input
+            type="text"
+            id="title-input"
+            class="form-input"
+            placeholder="My awesome link"
+            maxlength="255"
+          />
+        </div>
+        <div class="form-group">
+          <label for="custom-code-input" class="form-label">Custom Code (optional)</label>
+          <input
+            type="text"
+            id="custom-code-input"
+            class="form-input"
+            placeholder="my-slug"
+            maxlength="20"
+            pattern="[A-Za-z0-9_\-]+"
+          />
+        </div>
+        <div class="form-group">
+          <label for="expires-input" class="form-label">Expires At (optional)</label>
+          <input
+            type="datetime-local"
+            id="expires-input"
+            class="form-input"
+          />
+        </div>
+        <div class="form-group" style="display:flex; align-items:flex-end;">
+          <span class="text-subtle" style="font-size:13px; line-height:1.5;">
+            Only <strong style="color:var(--color-text-muted)">http://</strong> and
+            <strong style="color:var(--color-text-muted)">https://</strong> URLs are accepted.
+          </span>
+        </div>
+      </div>
+      <button type="submit" class="btn btn-primary btn-full" id="shorten-btn-2">
+        <span>🔗 Generate Short URL</span>
+      </button>
+    </form>
+    
+    <div class="result-banner" id="result-banner" role="alert">
+      <div style="flex:1">
+        <div style="font-size:12px; color:var(--color-success); font-weight:600; margin-bottom:6px;">✅ SHORT URL CREATED</div>
+        <div class="result-short-url" id="result-short-url">—</div>
+        <div style="font-size:12px; color:var(--color-text-muted); margin-top:4px;" id="result-original-url"></div>
+      </div>
+      <div style="display:flex; flex-direction:column; gap:8px;">
+        <button class="btn btn-success btn-sm" onclick="copyResult()" id="copy-result-btn">
+          📋 Copy
+        </button>
+        <a href="{{ url_for('main.dashboard') }}" class="btn btn-secondary btn-sm">
+          View All
+        </a>
+      </div>
+    </div>
+  </div>
+  
+  <div class="features-grid">
+    <div class="feature-card">
+      <div class="feature-icon">⚡</div>
+      <div class="feature-title">Instant Shortening</div>
+      <div class="feature-description">Generate a short code in milliseconds with cryptographically secure token generation.</div>
+    </div>
+    <div class="feature-card">
+      <div class="feature-icon">📊</div>
+      <div class="feature-title">Real-Time Analytics</div>
+      <div class="feature-description">Track every click with timestamps, referrers, and daily trend charts.</div>
+    </div>
+    <div class="feature-card">
+      <div class="feature-icon">🔒</div>
+      <div class="feature-title">Privacy First</div>
+      <div class="feature-description">IP addresses are never stored. Visitor analytics use daily one-way hashes.</div>
+    </div>
+    <div class="feature-card">
+      <div class="feature-icon">🕒</div>
+      <div class="feature-title">Link Expiration</div>
+      <div class="feature-description">Set an optional expiry date. Expired links are automatically rejected.</div>
+    </div>
+  </div>
+</div>
+{% endblock %}
+{% block scripts %}
+<script>
+const form = document.getElementById('shorten-form');
+const urlInput = document.getElementById('url-input');
+const titleInput = document.getElementById('title-input');
+const customCodeInput = document.getElementById('custom-code-input');
+const expiresInput = document.getElementById('expires-input');
+const resultBanner = document.getElementById('result-banner');
+const resultShortUrl = document.getElementById('result-short-url');
+const resultOriginalUrl = document.getElementById('result-original-url');
+let lastShortUrl = '';
+[form].forEach(el => el.addEventListener('submit', handleSubmit));
+async function handleSubmit(e) {
+  e.preventDefault();
+  const url = urlInput.value.trim();
+  if (!url) {
+    urlInput.classList.add('error');
+    showToast('Please enter a URL.', 'error');
+    urlInput.focus();
+    return;
+  }
+  urlInput.classList.remove('error');
+  const payload = { url };
+  if (titleInput.value.trim())      payload.title = titleInput.value.trim();
+  if (customCodeInput.value.trim()) payload.custom_code = customCodeInput.value.trim();
+  if (expiresInput.value)           payload.expires_at = new Date(expiresInput.value).toISOString();
+  setLoading(true);
+  resultBanner.classList.remove('visible');
+  const { ok, data } = await apiRequest('POST', '/api/urls', payload);
+  setLoading(false);
+  if (ok && data.url) {
+    lastShortUrl = data.url.short_url;
+    resultShortUrl.textContent = data.url.short_url;
+    resultOriginalUrl.textContent = truncate(data.url.original_url, 60);
+    resultBanner.classList.add('visible');
+    urlInput.value = '';
+    titleInput.value = '';
+    customCodeInput.value = '';
+    expiresInput.value = '';
+    showToast('Short URL created! 🎉', 'success');
+  } else {
+    const msg = data.message || data.error || 'Failed to create short URL.';
+    showToast(msg, 'error', 5000);
+    urlInput.classList.add('error');
+  }
+}
+function setLoading(on) {
+  document.getElementById('shorten-btn').disabled = on;
+  document.getElementById('shorten-btn-2').disabled = on;
+  document.getElementById('btn-text').textContent = on ? 'Creating…' : 'Shorten';
+  document.getElementById('btn-spinner').classList.toggle('hidden', !on);
+}
+function copyResult() {
+  copyToClipboard(lastShortUrl);
+}
+function truncate(str, max) {
+  return str && str.length > max ? str.slice(0, max) + '…' : str;
+}
+urlInput.addEventListener('input', () => urlInput.classList.remove('error'));
+</script>
+{% endblock %}
